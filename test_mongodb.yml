@@ -1,0 +1,75 @@
+- hosts: localhost
+  gather_facts: false
+  vars:
+    mongodb_parameters:
+      database: "test"
+      collection: "cases"
+      connection_string: "mongodb://localhost:27017"
+      filter:  { "CaseId" : "107c83bd-0646-46d6-a131-ee6652e4eae4" }
+      projection: { "CaseCurrentStatusDatetime": 0 }
+      sort:  [ [ "age" , "ASCENDING" ] , [ "age", "DESCENDING" ] ]
+  tasks:
+
+    - name: Import sample data to work with
+      shell: mongoimport --host localhost --db test --collection cases < sample_data.json
+      args:
+        chdir: "{{ playbook_dir }}"
+
+    - name: Create indexes
+      shell: mongo --host localhost test --eval "{{ item }}"
+      with_items:
+        - 'db.cases.createIndex({ "CaseId": 1 })'
+        - 'db.cases.createIndex({ "RequestorLastName": 1, "RequestorFirstName": 1, "age": 1 })'
+        - 'db.cases.createIndex({ "RequestorFirstName": 1 })'
+
+    - debug:
+        msg: "The CaseId is {{ item.CaseId }} and the surname is {{ item.RequestorLastName }}"
+      loop: "{{ query('mongodb', mongodb_parameters) }}"
+
+    - assert:
+        that:
+          - "item.CaseAddressString == '681 Pleasant Place, Ezel'"
+          - "item.CaseDescription == 'Pariatur sint dolor quis est.'"
+          - "item.RequestorFirstName == 'Frazier'"
+      loop: "{{ query('mongodb', mongodb_parameters) }}"
+
+    - set_fact:
+        mongodb_parameters:
+          database: "test"
+          collection: "cases"
+          connection_string: "mongodb://localhost:27017"
+          filter: { "CaseId": "be30e1f7-d001-4f7a-9044-786bc4178d61" }
+          projection: { "_id": 0, "CaseId": 1, "RequestorLastName": 1, "RequestorFirstName": 1, "age": 1 }
+
+    - debug:
+        msg: "The CaseId is {{ item.CaseId }} and the surname is {{ item.RequestorLastName }} and the first name is {{ item.RequestorFirstName }} and the age is {{ item.age }}"
+      loop: "{{ query('mongodb', mongodb_parameters) }}"
+
+    - assert:
+        that:
+          - "item.CaseId == 'be30e1f7-d001-4f7a-9044-786bc4178d61'"
+          - "item.RequestorLastName == 'Crosby'"
+          - "item.RequestorFirstName == 'Kelley'"
+          - "item.age == 22"
+      loop: "{{ query('mongodb', mongodb_parameters) }}"
+
+    - name: "Yet another mongodb query, now with the parameters on the task itself"
+      debug: msg="ServiceName={{item.ServiceName}}"
+      with_mongodb:
+        - database: "test"
+          collection: "cases"
+          connection_string: "mongodb://localhost/"
+          limit: 1
+          filter: { "CaseId": "8910f3a1-6046-47ba-aaa2-61fc4213cfb2" }
+          projection: { "_id": 0, "ServiceName": 1 }
+
+    - assert:
+        that:
+          - "item.ServiceName == 'Open Fire Hydrant'"
+      with_mongodb:
+        - database: "test"
+          collection: "cases"
+          connection_string: "mongodb://localhost/"
+          limit: 1
+          filter: { "CaseId": "8910f3a1-6046-47ba-aaa2-61fc4213cfb2" }
+          projection: { "_id": 0, "ServiceName": 1 }
